@@ -3,21 +3,26 @@ from pygrabber.dshow_graph import FilterGraph
 import time
 import os
 import threading
+from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtGui import QImage, QPixmap
+from datetime import datetime
+from PIL import Image
+import numpy as np
 
 # raspberry pi v2 12MP Camera resolutions:
 supported_resolution_pi_v2 = [[4032, 3040], [3840, 2160], [2592, 1944], [2560, 1440], [1920, 1080], [1280, 720],
                               [640, 480]]
 
 
-class Camera:
-    HIGH_VALUE = 10000
-    WIDTH = HIGH_VALUE
-    HEIGHT = HIGH_VALUE
+class Camera(QObject):
+    frame_signal = pyqtSignal(QPixmap)
 
     def __init__(self, device_number, resolution):
+        super().__init__()
         # creates capture Object for given device number
         self.device_number = device_number
         self.resolution = resolution
+        # self.frame_signal = pyqtSignal(QPixmap)
         self.__live_feed_running = False
         self.__thread = None
         try:
@@ -31,6 +36,7 @@ class Camera:
         self.__live_feed_running = True
         self.__thread = threading.Thread(target=self.__update_frame, args=())
         self.__thread.start()
+        print(f'Camera feed thread started')
 
     def __update_frame(self):
         # this method starts the camera live feed
@@ -43,7 +49,6 @@ class Camera:
         while self.__capture.isOpened():
             # Capture frame-by-frame
             return_value, self.frame = self.__capture.read()
-
             if return_value:
                 new_frame_time = time.perf_counter()
                 # calc frame per sec
@@ -51,17 +56,20 @@ class Camera:
                 prev_frame_time = new_frame_time
                 # write fps
                 fps_display_frame = self.frame.copy()
-                display_text = f'fps:{int(fps)}, res:{self.resolution[0]} x {self.resolution[1]}'
-                cv2.putText(fps_display_frame, display_text, (7, 25), font, 0.5, (100, 255, 0), 1)
+                height, width, channel = fps_display_frame.shape
+                display_text = f'fps:{int(fps)}, res:{width} x {height}'
+                cv2.putText(fps_display_frame, display_text, (7, 50), font, 2, (100, 255, 0), 3)
 
-                # display video
-                cv2.imshow('image', fps_display_frame)
+                # Convert the frame to QImage and emit the signal
+                bytes_per_line = 3 * width
+                q_img = QImage(fps_display_frame.data, width, height, bytes_per_line, QImage.Format.Format_BGR888)
+                self.frame_signal.emit(QPixmap.fromImage(q_img))
 
                 # add a waitKey call
                 if cv2.waitKey(1) and not self.__live_feed_running:
                     break
 
-    def capture_image(self):
+    def capture_image(self, camera_name):
         # will save a picture in pictures folder:
         image_path = 'pictures'
 
@@ -70,7 +78,10 @@ class Camera:
 
         if self.__live_feed_running:
             # save image
-            cv2.imwrite(f'{image_path}/image.png', self.frame)
+            now = datetime.now()
+            image_name = f'{now.strftime("%Y%m%d_%H%M%S")}_{camera_name}_{self.resolution[0]}x{self.resolution[1]}.png'
+            Image.fromarray(self.frame).save(f'{image_path}/{image_name}')
+            print(f'{image_name}    --> saved successfully!')
         else:
             raise ValueError(f'unable to capture Image')
 
@@ -88,7 +99,7 @@ if __name__ == '__main__':
 
     device_nr = graph.get_input_devices().index('Arducam IMX477 HQ Camera')
 
-    live_feed = CameraFeed(device_nr, supported_resolution_pi_v2[3])
+    live_feed = Camera(device_nr, supported_resolution_pi_v2[3])
 
     live_feed.start_camera_feed()
     time.sleep(3)

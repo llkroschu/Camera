@@ -1,0 +1,11 @@
+{
+    "background": "#000000",
+    "label_background": "#4D4D4D",
+    "label_text": "#ffffff",
+    "label_font_size": 20,
+    "button_font_size": 20,
+    "cursor_active": true,
+    "blink_time_ms": 500,
+    "interface_mode": "auto",
+    "size_factor": 1
+}
