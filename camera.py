@@ -7,7 +7,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap
 from datetime import datetime
 from PIL import Image
-import numpy as np
+from logWidget import LogWidget
 
 # raspberry pi v2 12MP Camera resolutions:
 supported_resolution_pi_v2 = [[4032, 3040], [3840, 2160], [2592, 1944], [2560, 1440], [1920, 1080], [1280, 720],
@@ -25,10 +25,12 @@ class Camera(QObject):
         # self.frame_signal = pyqtSignal(QPixmap)
         self.__live_feed_running = False
         self.__thread = None
+        self.logging = LogWidget
         try:
             self.__capture = cv2.VideoCapture(self.device_number, cv2.CAP_DSHOW)
             self.__capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.resolution[0])
             self.__capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.resolution[1])
+
         except ValueError as e:
             self.__capture = cv2.VideoCapture(0)
 
@@ -57,8 +59,10 @@ class Camera(QObject):
                 # write fps
                 fps_display_frame = self.frame.copy()
                 height, width, channel = fps_display_frame.shape
-                display_text = f'fps:{int(fps)}, res:{width} x {height}'
-                cv2.putText(fps_display_frame, display_text, (7, 50), font, 2, (100, 255, 0), 3)
+
+                # put logging text:
+                self.logging.remove()
+                self.logging.set_info(f'Resolution: {width}x{height} at {int(fps)} fps')
 
                 # Convert the frame to QImage and emit the signal
                 bytes_per_line = 3 * width

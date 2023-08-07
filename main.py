@@ -5,6 +5,8 @@ import sys
 import json
 from camera import Camera
 from pygrabber.dshow_graph import FilterGraph
+from logWidget import LogWidget
+from vimba import *
 
 with open("resource/gui_config.json") as f:
     gui_config = json.load(f)
@@ -21,7 +23,6 @@ size_factor = gui_config["size_factor"]
 with open("resource/camera_resolutions.json") as f:
     camera_resolutions = json.load(f)
 
-
 class MainWindow(QMainWindow):
     def __init__(self, app):
         super().__init__()
@@ -34,6 +35,7 @@ class MainWindow(QMainWindow):
 
         # get graph to show available cameras:
         self.graph = FilterGraph()
+        self.available_cameras = []
 
         # create spaceholder for videoWidget:
         self.video_widget = None
@@ -53,6 +55,9 @@ class MainWindow(QMainWindow):
                                       f"color: {label_text};")
         self.TopInfoBox.setFont(self.labelFont)
         self.TopInfoBox.setWordWrap(True)
+        self.logging = LogWidget()
+        LogWidget.initialize(self.TopInfoBox)
+        self.logging.set_info('Please choose a Camera and Resolution')
 
         # create take picture button
         self.PictureButton = QPushButton("  Take Picture  ")
@@ -83,7 +88,7 @@ class MainWindow(QMainWindow):
         self.configurationComboBox.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Expanding)
-        self.available_cameras = self.get_all_available_cameras()
+        self.get_all_available_cameras()
         for camera in self.available_cameras:
             self.configurationComboBox.addItem(camera)
         self.configurationComboBox.currentIndexChanged.connect(self.update_resolutions)
@@ -131,16 +136,20 @@ class MainWindow(QMainWindow):
     def update_resolutions(self):
         # Clear the current items in the resolutionComboBox
         self.resolutionComboBox.clear()
-
         # Get the current camera
         camera_name = self.configurationComboBox.currentText()
-
         # Get the resolutions for this camera
         resolutions = camera_resolutions.get(camera_name, {}).get("resolutions", [1920, 1080])
-
         # Add the resolutions to the resolutionComboBox
         for resolution in resolutions:
             self.resolutionComboBox.addItem(f'{resolution[0]} x {resolution[1]}')
+
+    def get_allied_vision_cameras(self):
+        with Vimba.get_instance() as vimba:
+            cams = vimba.get_all_cameras()
+            for cam in cams:
+                self.available_cameras.append(cam._Camera__info.cameraName.decode('utf-8'))
+
 
     def load_camera_feed(self):
         # removing old video_widget, to free up space
@@ -156,7 +165,9 @@ class MainWindow(QMainWindow):
         self.layout().update()
 
     def get_all_available_cameras(self):
-        return self.graph.get_input_devices()
+        self.available_cameras = self.graph.get_input_devices()
+        self.get_allied_vision_cameras()
+
 
     def take_picture(self):
         camera_name = self.configurationComboBox.currentText().split(" ")
