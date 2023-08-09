@@ -4,9 +4,10 @@ from PyQt6.QtGui import QFont, QShortcut, QKeySequence, QPixmap, QPainter
 import sys
 import json
 from camera import Camera
+from AlliedVisionCamera import AlliedVisionCamera
 from pygrabber.dshow_graph import FilterGraph
 from logWidget import LogWidget
-from vimba import *
+from vimba import Vimba
 
 with open("resource/gui_config.json") as f:
     gui_config = json.load(f)
@@ -36,6 +37,8 @@ class MainWindow(QMainWindow):
         # get graph to show available cameras:
         self.graph = FilterGraph()
         self.available_cameras = []
+        self.available_alliedVision_camera_names = []
+        self.available_alliedVision_camera_ids = []
 
         # create spaceholder for videoWidget:
         self.video_widget = None
@@ -101,8 +104,8 @@ class MainWindow(QMainWindow):
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Expanding)
         camera_name = self.configurationComboBox.currentText()
-        self.resolutions = camera_resolutions.get(camera_name, {}).get("resolutions", [1920, 1080])
-        for resolution in self.resolutions:
+        resolutions = camera_resolutions.get(camera_name, {}).get("resolutions", [1920, 1080])
+        for resolution in resolutions:
             self.resolutionComboBox.addItem(f'{resolution[0]} x {resolution[1]}')
 
         # top strip layout
@@ -149,15 +152,23 @@ class MainWindow(QMainWindow):
             cams = vimba.get_all_cameras()
             for cam in cams:
                 self.available_cameras.append(cam._Camera__info.cameraName.decode('utf-8'))
-
+                self.available_alliedVision_camera_names.append(cam._Camera__info.cameraName.decode('utf-8'))
+                self.available_alliedVision_camera_ids.append(cam._Camera__info.cameraIdString.decode('utf-8'))
 
     def load_camera_feed(self):
         # removing old video_widget, to free up space
+        if self.video_widget and self.video_widget.camera_feed:
+            self.video_widget.camera_feed.close_camera()
         self.middle_layout.removeWidget(self.video_widget)
         # create new video_widget
         current_camera = self.configurationComboBox.currentText()
-        device_number = self.graph.get_input_devices().index(current_camera)
-        current_resolution = self.resolutions[self.resolutionComboBox.currentIndex()]
+        if current_camera.startswith('Allied'):
+            idx = self.available_alliedVision_camera_names.index(current_camera)
+            device_number = self.available_alliedVision_camera_ids[idx]
+        else:
+            device_number = self.graph.get_input_devices().index(current_camera)
+        current_resolution_text = self.resolutionComboBox.currentText()
+        current_resolution = [int(value) for value in current_resolution_text.split(' x ')]
         self.video_widget = VideoWidget(self, device_number, current_resolution)
         # add new video_widget to the middle layout and start the video feed
         self.middle_layout.addWidget(self.video_widget, stretch=8)
@@ -167,7 +178,6 @@ class MainWindow(QMainWindow):
     def get_all_available_cameras(self):
         self.available_cameras = self.graph.get_input_devices()
         self.get_allied_vision_cameras()
-
 
     def take_picture(self):
         camera_name = self.configurationComboBox.currentText().split(" ")
@@ -191,15 +201,19 @@ class VideoWidget(QWidget):
         self.device_number = device_number
         self.resolution = resolution
         self.setStyleSheet(f"background-color: {background};")
-        self.camera_feed = Camera(self.device_number, self.resolution)
+        if isinstance(self.device_number, int):
+            self.camera_feed = Camera(self.device_number, self.resolution)
+        else:
+            self.camera_feed = AlliedVisionCamera(self.device_number, self.resolution)
         self.current_frame = QPixmap()
         self.camera_feed.frame_signal.connect(self.update_frame)
 
+
     def start_camera_feed(self):
-        self.camera_feed.start_camera_feed()
+        self.camera_feed.start_stream()
 
     def close_camera(self):
-        self.camera_feed.stop_camera()
+        self.camera_feed.stop_stream()
         print(f'camera object closed')
 
     def update_frame(self, frame):

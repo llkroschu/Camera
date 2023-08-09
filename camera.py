@@ -34,7 +34,7 @@ class Camera(QObject):
         except ValueError as e:
             self.__capture = cv2.VideoCapture(0)
 
-    def start_camera_feed(self):
+    def start_stream(self):
         self.__live_feed_running = True
         self.__thread = threading.Thread(target=self.__update_frame, args=())
         self.__thread.start()
@@ -89,7 +89,7 @@ class Camera(QObject):
         else:
             raise ValueError(f'unable to capture Image')
 
-    def stop_camera(self):
+    def stop_stream(self):
         # close the live feed
         self.__live_feed_running = False
         self.__thread.join()
@@ -105,9 +105,8 @@ if __name__ == '__main__':
 
     live_feed = Camera(device_nr, supported_resolution_pi_v2[3])
 
-    live_feed.start_camera_feed()
+    live_feed.start_stream()
     time.sleep(3)
     live_feed.capture_image()
     time.sleep(3)
-    live_feed.stop_camera()
-
+    live_feed.stop_stream()

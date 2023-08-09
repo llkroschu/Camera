@@ -36,9 +36,9 @@ def show_formats(cam):
 
 with Vimba.get_instance() as vimba:
     cams = vimba.get_all_cameras()
-    cam  = cams[0]
+    cam = cams[0]
     print(cam._Camera__info.cameraName)
-    with cams[0] as cam:
+    with cam:
         show_features(cam)
         opencv_formats = show_formats(cam)
         cam.set_pixel_format(opencv_formats[1])
@@ -87,8 +87,4 @@ with Vimba.get_instance() as vimba:
 
 
         #rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-
-
-
 
