@@ -1,13 +1,17 @@
+from PyQt6.QtCore import QSize
 from PyQt6.QtWidgets import QMainWindow, QApplication, QPushButton, QWidget, QVBoxLayout, QLabel, QSizePolicy, \
     QComboBox, QHBoxLayout
-from PyQt6.QtGui import QFont, QShortcut, QKeySequence, QPixmap, QPainter
+from PyQt6.QtGui import QFont, QShortcut, QKeySequence, QPixmap, QPainter, QIcon
 import sys
 import json
-from camera import Camera
-from AlliedVisionCamera import AlliedVisionCamera
+from raspberrycamera import RaspberryCamera
+from alliedvisioncamera import AlliedVisionCamera
+from baumercamera import BaumerCamera
 from pygrabber.dshow_graph import FilterGraph
 from logWidget import LogWidget
 from vimba import Vimba
+import neoapi
+from vertical_ayout import create_camera_controls
 
 with open("resource/gui_config.json") as f:
     gui_config = json.load(f)
@@ -63,7 +67,9 @@ class MainWindow(QMainWindow):
         self.logging.set_info('Please choose a Camera and Resolution')
 
         # create take picture button
-        self.PictureButton = QPushButton("  Take Picture  ")
+        self.PictureButton = QPushButton()
+        self.PictureButton.setIcon(QIcon('./camera_icon.png'))
+        self.PictureButton.setIconSize(QSize(70,70))
         self.PictureButton.setStyleSheet("background-color: #3d8bcd; color: white")
         self.PictureButton.setFont(self.buttonFont)
         self.PictureButton.setSizePolicy(
@@ -84,6 +90,16 @@ class MainWindow(QMainWindow):
         close_shortcut = QShortcut(QKeySequence('Ctrl+Q'), self)
         close_shortcut.activated.connect(self.close_app)
 
+        # Dropdown for selecting camera type
+        self.camera_type_dropdown = QComboBox()
+        self.camera_type_dropdown.setStyleSheet("background-color: #3d8bcd; color: white")
+        self.camera_type_dropdown.setFont(self.buttonFont)
+        self.camera_type_dropdown.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding)
+        self.camera_type_dropdown.addItems(["choose camera", "Baumer Camera", "AlliedVision Camera"])
+        self.camera_type_dropdown.currentTextChanged.connect(self.on_camera_type_changed)
+
         # create combo box for Cameras
         self.configurationComboBox = QComboBox()
         self.configurationComboBox.setStyleSheet("background-color: #3d8bcd; color: white")
@@ -91,7 +107,7 @@ class MainWindow(QMainWindow):
         self.configurationComboBox.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Expanding)
-        self.get_all_available_cameras()
+        self.get_available_cameras()
         for camera in self.available_cameras:
             self.configurationComboBox.addItem(camera)
         self.configurationComboBox.currentIndexChanged.connect(self.update_resolutions)
@@ -112,22 +128,33 @@ class MainWindow(QMainWindow):
         top_layout = QHBoxLayout()
         top_layout.setSpacing(0)
         top_layout.addWidget(self.TopInfoBox, stretch=10)
+        top_layout.addWidget(self.camera_type_dropdown, stretch=1)
         top_layout.addWidget(self.configurationComboBox, stretch=1)
         top_layout.addWidget(self.resolutionComboBox, stretch=1)
         top_layout.addWidget(self.LoadButton, stretch=1)
         top_layout.addWidget(self.PictureButton, stretch=1)
 
         # middle strip layout
+        # self.middle_layout = QHBoxLayout()
+
+
+        # Middle and right layouts are placed side by side
+        content_layout = QHBoxLayout()
         self.middle_layout = QHBoxLayout()
         self.middle_layout.setSpacing(0)
         self.middle_layout.addWidget(self.video_widget, stretch=8)
+        content_layout.addLayout(self.middle_layout, stretch=stretch_factor)
+        right_layout = create_camera_controls(self)  # Assuming you've already added this from our previous discussions
+        content_layout.addLayout(right_layout)
+
 
         # complete layout
         layout = QVBoxLayout()
         layout.setSpacing(0)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(top_layout, stretch=1)
-        layout.addLayout(self.middle_layout, stretch=stretch_factor)
+        layout.addLayout(content_layout, stretch=12)
+        #layout.addLayout(self.middle_layout, stretch=stretch_factor)
         self.setLayout(layout)
 
         main_widget = QWidget()
@@ -142,7 +169,7 @@ class MainWindow(QMainWindow):
         # Get the current camera
         camera_name = self.configurationComboBox.currentText()
         # Get the resolutions for this camera
-        resolutions = camera_resolutions.get(camera_name, {}).get("resolutions", [1920, 1080])
+        resolutions = camera_resolutions.get(camera_name, {}).get("resolutions", [[1920, 1080], [1080,720]])
         # Add the resolutions to the resolutionComboBox
         for resolution in resolutions:
             self.resolutionComboBox.addItem(f'{resolution[0]} x {resolution[1]}')
@@ -154,6 +181,7 @@ class MainWindow(QMainWindow):
                 self.available_cameras.append(cam._Camera__info.cameraName.decode('utf-8'))
                 self.available_alliedVision_camera_names.append(cam._Camera__info.cameraName.decode('utf-8'))
                 self.available_alliedVision_camera_ids.append(cam._Camera__info.cameraIdString.decode('utf-8'))
+                self.AlliedVisionCamera = True
 
     def load_camera_feed(self):
         # removing old video_widget, to free up space
@@ -165,6 +193,8 @@ class MainWindow(QMainWindow):
         if current_camera.startswith('Allied'):
             idx = self.available_alliedVision_camera_names.index(current_camera)
             device_number = self.available_alliedVision_camera_ids[idx]
+        elif current_camera.startswith('Baumer '):
+            device_number = current_camera
         else:
             device_number = self.graph.get_input_devices().index(current_camera)
         current_resolution_text = self.resolutionComboBox.currentText()
@@ -175,13 +205,48 @@ class MainWindow(QMainWindow):
         self.video_widget.start_camera_feed()
         self.layout().update()
 
-    def get_all_available_cameras(self):
+    def get_available_cameras(self):
+        camera_type = self.camera_type_dropdown.currentText()
         self.available_cameras = self.graph.get_input_devices()
-        self.get_allied_vision_cameras()
+        if camera_type == "Baumer Camera":
+            self.get_baumer_cameras()
+        elif camera_type == "AlliedVision Camera":
+            self.get_allied_vision_cameras()
+        self.configurationComboBox.clear()
+        self.configurationComboBox.addItems(self.available_cameras)
+
+    def on_camera_type_changed(self):
+        self.get_available_cameras()
+
+    def get_baumer_cameras(self):
+        cam_list = neoapi.CamInfoList.Get()
+        cam_list.Refresh()
+        for cam_info in cam_list:
+            camera_name = cam_info.GetModelName()
+            self.available_cameras.append(f'Baumer {camera_name}')
 
     def take_picture(self):
         camera_name = self.configurationComboBox.currentText().split(" ")
         self.video_widget.camera_feed.capture_image(camera_name[0])
+
+    def handle_exposure_setting(self, value):
+        self.video_widget.camera_feed.set_exposure(value)
+
+    def handle_exposure_off(self):
+        self.video_widget.camera_feed.set_exposure_off()
+
+    def handle_exposure_once(self):
+        self.video_widget.camera_feed.set_exposure_once()
+
+    def handle_exposure_continuous(self):
+        self.video_widget.camera_feed.set_exposure_continuous()
+
+    def handle_gain_setting(self, value):
+        self.video_widget.camera_feed.set_gain(value)
+
+    def handle_gamma_setting(self, value):
+        self.video_widget.camera_feed.set_gamma(value)
+
 
     def closeEvent(self, event):
         # gets triggered when the close button is clicked.
@@ -202,12 +267,14 @@ class VideoWidget(QWidget):
         self.resolution = resolution
         self.setStyleSheet(f"background-color: {background};")
         if isinstance(self.device_number, int):
-            self.camera_feed = Camera(self.device_number, self.resolution)
+            self.camera_feed = RaspberryCamera(self.device_number, self.resolution)
+        elif self.device_number.startswith('Baumer'):
+            self.device_number = self.device_number.split('Baumer ')[1]
+            self.camera_feed = BaumerCamera(self.device_number, self.resolution)
         else:
             self.camera_feed = AlliedVisionCamera(self.device_number, self.resolution)
         self.current_frame = QPixmap()
         self.camera_feed.frame_signal.connect(self.update_frame)
-
 
     def start_camera_feed(self):
         self.camera_feed.start_stream()

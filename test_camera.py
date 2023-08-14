@@ -85,6 +85,3 @@ with Vimba.get_instance() as vimba:
             cv2.destroyAllWindows()
 
 
-
-        #rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-

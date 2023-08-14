@@ -1,7 +1,7 @@
 import sys
 from PyQt6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
 from PyQt6.QtGui import QPixmap
-from AlliedVisionCamera import AlliedVisionCamera
+from alliedvisioncamera import AlliedVisionCamera
 
 
 class CameraApp(QWidget):
